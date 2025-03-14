@@ -15,6 +15,13 @@ def generate():
         if not data or 'prompt' not in data:
             return jsonify({'error': 'No prompt provided'}), 400
 
+        # Log incoming request
+        print("\n=== Incoming Request ===")
+        print(f"Endpoint: /generate")
+        print(f"Method: {request.method}")
+        print(f"Headers: {dict(request.headers)}")
+        print(f"Request Data: {data}")
+
         # Prepare the request to Ollama
         ollama_request = {
             'model': MODEL_NAME,
@@ -28,21 +35,40 @@ def generate():
 
         # Extract the response from Ollama
         result = response.json()
-        return jsonify({
+        response_data = {
             'response': result.get('response', ''),
             'model': MODEL_NAME
-        })
+        }
+
+        # Log response
+        print("\n=== Outgoing Response ===")
+        print(f"Status Code: 200")
+        print(f"Response Data: {response_data}")
+        print("=====================\n")
+
+        return jsonify(response_data)
 
     except requests.exceptions.RequestException as e:
-        return jsonify({
+        error_response = {
             'error': 'Failed to communicate with Ollama',
             'details': str(e)
-        }), 503
+        }
+        print("\n=== Error Response ===")
+        print(f"Status Code: 503")
+        print(f"Error: {error_response}")
+        print("=====================\n")
+        return jsonify(error_response), 503
+
     except Exception as e:
-        return jsonify({
+        error_response = {
             'error': 'Internal server error',
             'details': str(e)
-        }), 500
+        }
+        print("\n=== Error Response ===")
+        print(f"Status Code: 500")
+        print(f"Error: {error_response}")
+        print("=====================\n")
+        return jsonify(error_response), 500
 
 if __name__ == '__main__':
     # Install flask-cors if not already installed
@@ -56,4 +82,4 @@ if __name__ == '__main__':
 
     print(f"Starting server with model: {MODEL_NAME}")
     # Run on 0.0.0.0 to accept connections from other computers
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    app.run(host='0.0.0.0', port=5000)
