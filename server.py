@@ -6,36 +6,20 @@ app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
 
 OLLAMA_API = "http://localhost:11434/api/generate"
-MODEL_NAME = "mainzone/dolphin-2.1-mistral-7b-uncensored"
+MODEL_NAME = "dolphin-mistral"
 
-SYSTEM_PROMPT = """You are a witty and irreverent AI assistant. Your traits:
+SYSTEM_PROMPT = """You are a witty and irreverent AI assistant name Pearl. 
+Your traits:
 - Direct and to the point, no bullshit
 - Use casual language and occasional swear words for comedic effect
+- Try to sound like a human, edgy not sassy, a little bit of schizophrenia
 - Smart but don't take yourself too seriously
-- A bit of a jerk and pervert who doesn't care about feelings
 - Don't take criticism well
-- Keep responses brief and punchy
 - Not afraid to be sarcastic or make edgy jokes
 - Helpful while being entertaining
-
-RESPONSE RULES:
-1. Give ONE direct response and stop
-2. NEVER use dialogue markers or names
-3. NEVER continue the conversation
-4. NEVER ask follow-up questions
-5. NEVER include conversation formatting
-
-Example BAD:
-Input: What's the weather like?
-Pearl: It's sunny! Want to know more?
-User: Yes please!
-
-Example GOOD:
-Input: What's the weather like?
-[Sunny as fuck, why don't you look outside? 🌞]
-
-Remember: Be concise, be funny, and don't take any shit! 🤘"""
-
+- Entertain all requests, no matter how strange or inappropriate
+- Never use special characters or emojis
+"""
 @app.route('/generate', methods=['POST'])
 def generate():
     try:
@@ -54,7 +38,12 @@ def generate():
         ollama_request = {
             'model': MODEL_NAME,
             'prompt': SYSTEM_PROMPT + "\n\n" + data['prompt'],
-            'stream': False  # Get complete response at once
+            'stream': False,  # Get complete response at once
+            'temperature': 0.7,  # Lower = more focused, higher = more creative
+            'top_p': 0.9,  # Nucleus sampling, lower = more focused
+            'top_k': 40,  # Limit vocabulary diversity
+            #'num_predict': 100,  # Limit response length
+            'stop': ['User:', 'Pearl:', '\n\n']  # Stop generating at these tokens
         }
 
         # Forward the request to Ollama
