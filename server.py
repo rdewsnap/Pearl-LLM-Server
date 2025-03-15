@@ -53,7 +53,7 @@ conversation = ConversationManager()
 
 # Search Related Constants
 PRICE_RELATED_TERMS = ['price', 'btc', 'bitcoin', 'eth', 'ethereum', 'stock']
-SEARCH_PREFIX = "search:"
+SEARCH_PREFIX = "Search: "
 
 # Follow-up Question Indicators
 FOLLOWUP_INDICATORS = [
@@ -101,17 +101,13 @@ DEFAULT_GENERATION_PARAMS = {
 }
 
 def get_web_context(query: str) -> str:
-    """Get relevant web context for queries that start with 'Search: '"""
+    """Get relevant web context for queries"""
     try:
         print("\n=== Search Request ===")
         print(f"Original query: {query}")
         
-        if not query.lower().startswith(SEARCH_PREFIX):
-            print("No 'Search:' prefix found, skipping web search")
-            return ""
-            
-        # Strip 'Search: ' prefix and clean the query
-        clean_query = query[7:].strip()
+        # Clean the query
+        clean_query = query.strip()
         print(f"Cleaned query: {clean_query}")
         
         # Prepare Serper API request
@@ -282,7 +278,7 @@ def generate():
         web_context = ""
         if should_search:
             clean_query = original_prompt[7:].strip() if original_prompt.lower().startswith(SEARCH_PREFIX) else original_prompt
-            web_context = get_web_context(f"Search: {clean_query}")
+            web_context = get_web_context(clean_query)
         
         cleaned_prompt = original_prompt[7:].strip() if original_prompt.lower().startswith(SEARCH_PREFIX) else original_prompt
 
@@ -292,10 +288,10 @@ def generate():
         # Add web context if available
         if web_context:
             match = re.search(r'\[(PRICE|WEATHER|DIRECT_ANSWER|SEARCH_RESULT|KNOWLEDGE_GRAPH|ORGANIC_RESULT)\]\s*(.+)', web_context)
-            if match:
-                conversation.add_message("system", f"Web context: {match.group(2).strip()}")
-            else:
-                conversation.add_message("system", f"Web context: {web_context.strip()}")
+            web_context_content = match.group(2).strip() if match else web_context.strip()
+            system_prompt = f"You must use this accurate web search result to answer the user's question: {web_context_content}"
+        else:
+            system_prompt = None
 
         # Get formatted context from previous messages
         context_text = conversation.get_formatted_context()
@@ -303,8 +299,9 @@ def generate():
         # Prepare Ollama request with context
         ollama_request = {
             'model': MODEL_NAME,
-            'prompt': cleaned_prompt,  # Send just the prompt, no formatting
-            'context': conversation.context_tokens,  # Use Ollama's native context
+            'prompt': cleaned_prompt,
+            'context': conversation.context_tokens,
+            'system': system_prompt,
             'stream': False,
             **DEFAULT_GENERATION_PARAMS
         }
