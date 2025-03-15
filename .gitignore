@@ -25,4 +25,9 @@ build/
 .env.local
 
 # Logs
-*.log 
+*.log
+
+# Environment and config files
+config.py
+config.json
+*.config.py 
