@@ -12,7 +12,7 @@ CORS(app)  # Enable CORS for all routes
 
 # API Configuration
 OLLAMA_API = "http://localhost:11434/api/generate"
-MODEL_NAME = "dolphin-mistral"
+MODEL_NAME = "pearl"
 SERPER_API = "https://google.serper.dev/search"
 
 # Message and Context Configuration
@@ -25,27 +25,11 @@ class Message:
         return {"role": self.role, "content": self.content}
 
 class ConversationManager:
-    def __init__(self, max_messages: int = 8):
-        self.messages: List[Message] = []
-        self.max_messages = max_messages
+    def __init__(self):
         self.context_tokens: Optional[Sequence[int]] = None
         
-    def add_message(self, role: str, content: str) -> None:
-        """Add a message to the conversation history"""
-        self.messages.append(Message(role, content))
-        if len(self.messages) > self.max_messages:
-            self.messages.pop(0)
-            
-    def get_formatted_context(self) -> str:
-        """Get formatted context string for prompt construction"""
-        formatted = []
-        for msg in self.messages[-2:]:  # Only use last 2 messages for prompt context
-            formatted.append(f"{msg.role}: {msg.content}")
-        return "\n---\n".join(formatted) if formatted else ""
-    
     def clear(self) -> None:
-        """Clear conversation history"""
-        self.messages.clear()
+        """Clear conversation context"""
         self.context_tokens = None
 
 # Initialize conversation manager
@@ -63,12 +47,26 @@ FOLLOWUP_INDICATORS = [
 
 # Response Cleaning Patterns
 FORMAT_MARKERS = [
-    'Current message:', 'Previous messages:', 'Response:', 'Pearl:', '###',
-    "Well, you asked for it, so here's the deal:", "Here's what I found:",
-    "Current price:", "Price:", "Let's perform a search", "According to",
-    "That's it for now", "The current", "Current", "I suggest",
-    "You could try", "You might want to", "For example", "Here are some",
-    "Such as", "Like this"
+    'Current message:',
+    'Previous messages:',
+    'Response:',
+    'Pearl:',
+    '###',
+    "Well, you asked for it, so here's the deal:",
+    "Here's what I found:",
+    "Current price:",
+    "Price:",
+    "Let's perform a search",
+    "According to the",  # More specific to avoid cutting content
+    "That's it for now",
+    "Current weather:",
+    "I suggest",
+    "You could try",
+    "You might want to",
+    "For example,",
+    "Here are some",
+    "Such as,",
+    "Like this:"
 ]
 
 DONT_KNOW_RESPONSES = [
@@ -80,25 +78,6 @@ DONT_KNOW_RESPONSES = [
     "Beats me.",
     "No idea about that one."
 ]
-
-# Ollama Generation Parameters
-DEFAULT_GENERATION_PARAMS = {
-    'temperature': 0.8,
-    'top_k': 40,
-    'top_p': 0.9,
-    'repeat_penalty': 1.3,
-    'repeat_last_n': 64,
-    'presence_penalty': 0.5,
-    'frequency_penalty': 0.5,
-    'stop': [
-        '[Context]',
-        '[Question]',
-        '[Answer]',
-        '\n\n[',
-        '###',
-        '[END]'
-    ]
-}
 
 def get_web_context(query: str) -> str:
     """Get relevant web context for queries"""
@@ -181,12 +160,17 @@ def clean_response(response_text: str) -> str:
         print("DEBUG: Empty response text")
         return random.choice(DONT_KNOW_RESPONSES)
         
-    # Remove quotes if they wrap the entire response
-    response_text = response_text.strip('"')
+    # Only remove quotes if they wrap the entire response and aren't part of the content
+    if (len(response_text) >= 2 
+        and response_text[0] == '"' 
+        and response_text[-1] == '"' 
+        and response_text.count('"') == 2):
+        response_text = response_text[1:-1]
     
     # Remove system prompt if it appears anywhere in the response
     system_markers = [
         'PERSONALITY:',
+        'RULES:',
         'RESPONSE STYLE:',
         'CONTEXT HANDLING:',
         'FORBIDDEN:',
@@ -198,11 +182,14 @@ def clean_response(response_text: str) -> str:
             # Take everything before the first system marker
             response_text = response_text.split(marker)[0].strip()
     
-    # Remove format markers
+    # Remove format markers more carefully
     for marker in FORMAT_MARKERS:
         if response_text.startswith(marker):
-            print(f"DEBUG: Removed format marker: {marker}")
-            response_text = response_text.replace(marker, '').strip()
+            print(f"DEBUG: Removed starting format marker: {marker}")
+            response_text = response_text[len(marker):].strip()
+        elif f"\n{marker}" in response_text:  # Only remove if it's at the start of a line
+            print(f"DEBUG: Removed line-starting format marker: {marker}")
+            response_text = response_text.replace(f"\n{marker}", "\n").strip()
     
     # Remove self-questioning patterns
     response_text = re.sub(r'\n\n\[Question\].*?\[Answer\]', '', response_text, flags=re.DOTALL)
@@ -282,28 +269,40 @@ def generate():
         
         cleaned_prompt = original_prompt[7:].strip() if original_prompt.lower().startswith(SEARCH_PREFIX) else original_prompt
 
-        # Add user message to conversation
-        conversation.add_message("user", cleaned_prompt)
-        
         # Add web context if available
         if web_context:
             match = re.search(r'\[(PRICE|WEATHER|DIRECT_ANSWER|SEARCH_RESULT|KNOWLEDGE_GRAPH|ORGANIC_RESULT)\]\s*(.+)', web_context)
             web_context_content = match.group(2).strip() if match else web_context.strip()
-            system_prompt = f"You must use this accurate web search result to answer the user's question: {web_context_content}"
-        else:
-            system_prompt = None
+            cleaned_prompt = f"{cleaned_prompt}\n\nHere is some relevant information: {web_context_content}"
 
-        # Get formatted context from previous messages
-        context_text = conversation.get_formatted_context()
-
+        # For conspiracy topics, encourage structured responses
+        if any(word in cleaned_prompt.lower() for word in ['conspiracy', 'real', 'fake', 'true', 'hoax']):
+            cleaned_prompt = f"{cleaned_prompt}\n\nPlease provide a structured response covering Official Records, Conspiracy Theory Perspective, Analysis of Both Sides, and your Take"
+        # For repeated questions, encourage new perspectives
+        elif conversation.context_tokens is not None:
+            cleaned_prompt = f"{cleaned_prompt}\n\nPlease provide a different perspective or additional details compared to your previous response."
+        
         # Prepare Ollama request with context
         ollama_request = {
             'model': MODEL_NAME,
             'prompt': cleaned_prompt,
             'context': conversation.context_tokens,
-            'system': system_prompt,
             'stream': False,
-            **DEFAULT_GENERATION_PARAMS
+            'temperature': 0.2,        # Slight randomness to help variation
+            'top_k': 30,              # More token options
+            'top_p': 0.85,            # Balanced sampling
+            'repeat_penalty': 1.15,    # Light repeat penalty
+            'repeat_last_n': 128,      # Look at more context
+            'presence_penalty': 0.4,    # Moderate presence penalty
+            'frequency_penalty': 0.4,   # Moderate frequency penalty
+            'stop': [
+                '[Context]',
+                '[Question]',
+                '[Answer]',
+                '\n\n[',
+                '###',
+                '[END]'
+            ]
         }
 
         # Get response from Ollama
@@ -316,14 +315,10 @@ def generate():
         
         # Update context tokens from response
         conversation.context_tokens = result.get('context')
-        
-        # Store assistant response in conversation
-        conversation.add_message("assistant", response_text)
 
         response_data = {
             'response': response_text,
             'model': MODEL_NAME,
-            'context_length': len(conversation.messages),
             'has_web_context': bool(web_context)
         }
 
@@ -332,7 +327,6 @@ def generate():
         print(f"Status Code: 200")
         print(f"Response Data: {response_data}")
         print(f"Web Context Used: {bool(web_context)}")
-        print(f"Current Context Length: {len(conversation.messages)}")
         print("=====================\n")
 
         return jsonify(response_data)
