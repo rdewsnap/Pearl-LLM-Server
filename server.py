@@ -52,7 +52,7 @@ class ConversationManager:
 conversation = ConversationManager()
 
 # Search Related Constants
-PRICE_RELATED_TERMS = ['price', 'btc', 'bitcoin', 'eth', 'ethereum', 'stock']
+SEARCH_RELATED_TERMS = ['price', 'btc', 'bitcoin', 'eth', 'ethereum', 'stock', 'date', 'news', 'weather']
 SEARCH_PREFIX = "Search: "
 
 # Follow-up Question Indicators
@@ -272,7 +272,7 @@ def generate():
         # Handle search queries
         should_search = (
             original_prompt.lower().startswith(SEARCH_PREFIX) or
-            any(word in original_prompt.lower() for word in PRICE_RELATED_TERMS)
+            any(word in original_prompt.lower() for word in SEARCH_RELATED_TERMS)
         )
         
         web_context = ""
